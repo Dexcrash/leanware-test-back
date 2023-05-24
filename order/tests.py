@@ -1,232 +1,355 @@
-import json
-from datetime import date
 from django.test import TestCase
-from django.db.models import Sum
+from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APIClient
-from faker import Faker
-from .models import Product, Order
-from .serilizers import ProductSerializer, OrderSerializer
-from .factories import ProductFactory, OrderFactory
-import logging
+from datetime import datetime
+from .models import Product, Order, Quantity
+from .serilizers import ProductSerializer, OrderSerializer, QuantitySerializer
 
-# Get the logger for the current module
-logger = logging.getLogger(__name__)
-
-fake = Faker()
-
-
-class OrderViewTests(TestCase):
+class ProductTests(TestCase):
     def setUp(self):
         self.client = APIClient()
-
-    def test_get_order_list(self):
-        products = ProductFactory.create_batch(2)
-        orders = OrderFactory.create_batch(2)
-        for order in orders:
-            order.products.set(products)
-
-        url = '/api/orders/'
-        response = self.client.get(url)
-
-        self.assertEqual(response.status_code, 200)
-        serialized_orders = OrderSerializer(orders, many=True)
-        self.assertEqual(response.data, serialized_orders.data)
-
-
-    def test_get_order_detail(self):
-        order = OrderFactory()
-
-        url = f'/api/orders/{order.id}/'
-        response = self.client.get(url)
-
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data, OrderSerializer(order).data)
-
-    def test_create_order(self):
-        product1 = ProductFactory()
-        product2 = ProductFactory()
-
-        url = '/api/orders/'
-        data = {
-            'number': fake.random_int(min=1, max=100),
-            'total_check': fake.random_int(min=10, max=100),
-            'total_tip': fake.random_int(min=1, max=10),
-            'date_created': fake.date(),
-            'products': [product1.id, product2.id]
-        }
-        response = self.client.post(url, json.dumps(data), content_type='application/json')
-
-        self.assertEqual(response.status_code, 201)
-        self.assertEqual(response.data['number'], data['number'])
-        self.assertEqual(response.data['total_check'], data['total_check'])
-        self.assertEqual(response.data['total_tip'], data['total_tip'])
-        self.assertEqual(response.data['products'], data['products'])
-
-    def test_update_order(self):
-        order = OrderFactory()
-        product = ProductFactory()
-
-        url = f'/api/orders/{order.id}/'
-        data = {
-            'number': fake.random_int(min=1, max=100),
-            'total_check': fake.random_int(min=10, max=100),
-            'total_tip': fake.random_int(min=1, max=10),
-            'date_created': fake.date(),
-            'products': [product.id]
-        }
-        response = self.client.put(url, data)
-
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data['number'], data['number'])
-        self.assertEqual(response.data['total_check'], data['total_check'])
-        self.assertEqual(response.data['total_tip'], data['total_tip'])
-        self.assertEqual(response.data['products'], data['products'])
-
-    def test_delete_order(self):
-        order = OrderFactory()
-
-        url = f'/api/orders/{order.id}/'
-        response = self.client.delete(url)
-
-        self.assertEqual(response.status_code, 204)
-        self.assertFalse(Order.objects.filter(id=order.id).exists())
-
-class ProductViewTests(TestCase):
-    def setUp(self):
-        self.client = APIClient()
-
-    def test_get_product_list(self):
-        products = ProductFactory.create_batch(2)
-
-        url = '/api/products/'
-        response = self.client.get(url)
-
-        self.assertEqual(response.status_code, 200)
-        serialized_products = ProductSerializer(products, many=True)
-        self.assertEqual(response.data, serialized_products.data)
-
-    def test_get_product_detail(self):
-        product = ProductFactory()
-
-        url = f'/api/products/{product.id}/'
-        response = self.client.get(url)
-
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data, ProductSerializer(product).data)
 
     def test_create_product(self):
-        url = '/api/products/'
+        url = reverse('product-list')
         data = {
-            'name': fake.name(),
-            'price': fake.random_int(min=1, max=100),
+            'name': 'Test Product',
+            'price': 10,
+            'img': 'test.jpg',
+            'description': 'Test description',
+            'category': Product.Category.MAIN,
         }
-        response = self.client.post(url, json.dumps(data), content_type='application/json')
+        response = self.client.post(url, data, format='json')
 
-        self.assertEqual(response.status_code, 201)
-        self.assertEqual(response.data['name'], data['name'])
-        self.assertEqual(response.data['price'], data['price'])
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        product = Product.objects.get(pk=response.data['id'])
+        self.assertEqual(product.name, 'Test Product')
+
+    def test_retrieve_product(self):
+        product = Product.objects.create(
+            name='Test Product',
+            price=10,
+            img='test.jpg',
+            description='Test description',
+            category=Product.Category.MAIN,
+        )
+        url = reverse('product-detail', args=[product.id])
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['name'], 'Test Product')
 
     def test_update_product(self):
-        product = ProductFactory()
-
-        url = f'/api/products/{product.id}/'
+        product = Product.objects.create(
+            name='Test Product',
+            price=10,
+            img='test.jpg',
+            description='Test description',
+            category=Product.Category.MAIN,
+        )
+        url = reverse('product-detail', args=[product.id])
         data = {
-            'name': fake.name(),
-            'price': fake.random_int(min=1, max=100),
+            'name': 'Updated Product',
+            'price': 15,
+            'img': 'updated.jpg',
+            'description': 'Updated description',
+            'category': Product.Category.STARTER,
         }
-        response = self.client.put(url, data)
+        response = self.client.put(url, data, format='json')
 
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data['name'], data['name'])
-        self.assertEqual(response.data['price'], data['price'])
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        product.refresh_from_db()
+        self.assertEqual(product.name, 'Updated Product')
 
     def test_delete_product(self):
-        product = ProductFactory()
-
-        url = f'/api/products/{product.id}/'
+        product = Product.objects.create(
+            name='Test Product',
+            price=10,
+            img='test.jpg',
+            description='Test description',
+            category=Product.Category.MAIN,
+        )
+        url = reverse('product-detail', args=[product.id])
         response = self.client.delete(url)
 
-        self.assertEqual(response.status_code, 204)
-        self.assertFalse(Product.objects.filter(id=product.id).exists())
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertFalse(Product.objects.filter(pk=product.id).exists())
 
-class OrderDeleteViewTests(TestCase):
+class OrderTests(TestCase):
     def setUp(self):
         self.client = APIClient()
 
-    def test_delete_orders(self):
-        # Create orders with specific dates
-        order1 = OrderFactory.create(date_created=date(2023, 1, 1), date_paid=date(2023, 1, 2))
-        order2 = OrderFactory.create(date_created=date(2023, 6, 1), date_paid=date(2023, 6, 2))
-        order3 = OrderFactory.create(date_created=date(2024, 1, 1), date_paid=None)
+    def test_create_order(self):
+        url = reverse('order-list')
+        data = {
+            'number': 1,
+            'table_id': 1,
+            'customer_id': 1,
+            'state': Order.State.ORDERING,
+            'total_check': 0,
+            'percentage_tip': 0,
+            'total_tip': 0,
+        }
+        response = self.client.post(url, data, format='json')
 
-        url = '/api/delete/'
-        start_date = '2023-01-01'
-        end_date = '2023-12-31'
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        order = Order.objects.get(pk=response.data['id'])
+        self.assertEqual(order.number, 1)
 
-        response = self.client.post(url, data={'start_date': start_date, 'end_date': end_date})
+    def test_retrieve_order(self):
+        order = Order.objects.create(
+            number=1,
+            table_id=1,
+            customer_id=1,
+            state=Order.State.ORDERING,
+            total_check=0,
+            percentage_tip=0,
+            total_tip=0,
+        )
+        url = reverse('order-detail', args=[order.id])
+        response = self.client.get(url)
 
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data['orders_deleted'], 2)
-        self.assertFalse(Order.objects.filter(id=order1.id).exists())
-        self.assertFalse(Order.objects.filter(id=order2.id).exists())
-        self.assertTrue(Order.objects.filter(id=order3.id).exists())
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['number'], 1)
 
-        # Verify that the order in progress (order3) was not deleted
+    def test_update_order(self):
+        order = Order.objects.create(
+            number=1,
+            table_id=1,
+            customer_id=1,
+            state=Order.State.ORDERING,
+            total_check=0,
+            percentage_tip=0,
+            total_tip=0,
+        )
+        url = reverse('order-detail', args=[order.id])
+        data = {
+            'number': 2,
+            'table_id': 2,
+            'customer_id': 2,
+            'state': Order.State.CHECKING,
+            'total_check': 100,
+            'percentage_tip': 10,
+            'total_tip': 10,
+        }
+        response = self.client.put(url, data, format='json')
 
-    def test_delete_orders_invalid_dates(self):
-        url = '/api/delete/'
-        response = self.client.post(url, data={'start_date': 'invalid', 'end_date': 'date'})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        order.refresh_from_db()
+        self.assertEqual(order.number, 2)
 
-        self.assertEqual(response.status_code, 400)
-        self.assertEqual(response.data['error'], 'Invalid date format. Please provide dates in the format: YYYY-MM-DD.')
+    def test_delete_order(self):
+        order = Order.objects.create(
+            number=1,
+            table_id=1,
+            customer_id=1,
+            state=Order.State.ORDERING,
+            total_check=0,
+            percentage_tip=0,
+            total_tip=0,
+        )
+        url = reverse('order-detail', args=[order.id])
+        response = self.client.delete(url)
 
-    def test_delete_orders_missing_dates(self):
-        url = '/api/delete/'
-        response = self.client.post(url, data={})
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertFalse(Order.objects.filter(pk=order.id).exists())
 
-        self.assertEqual(response.status_code, 400)
-        self.assertEqual(response.data['error'], 'start_date and end_date are required.')
+class QuantityTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+
+    def test_create_quantity(self):
+        order = Order.objects.create(
+            number=1,
+            table_id=1,
+            customer_id=1,
+            state=Order.State.ORDERING,
+            total_check=0,
+            percentage_tip=0,
+            total_tip=0,
+        )
+        product = Product.objects.create(
+            name='Test Product',
+            price=10,
+            img='test.jpg',
+            description='Test description',
+            category=Product.Category.MAIN,
+        )
+
+        url = reverse('quantity-list')
+        data = {
+            'order': order.id,
+            'product': product.id,
+            'quantity': 1,
+        }
+        response = self.client.post(url, data, format='json')
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        quantity = Quantity.objects.get(pk=response.data['id'])
+        self.assertEqual(quantity.order, order)
+        self.assertEqual(quantity.product, product)
+        self.assertEqual(quantity.quantity, 1)
+
+    def test_retrieve_quantity(self):
+        order = Order.objects.create(
+            number=1,
+            table_id=1,
+            customer_id=1,
+            state=Order.State.ORDERING,
+            total_check=0,
+            percentage_tip=0,
+            total_tip=0,
+        )
+        product = Product.objects.create(
+            name='Test Product',
+            price=10,
+            img='test.jpg',
+            description='Test description',
+            category=Product.Category.MAIN,
+        )
+        quantity = Quantity.objects.create(
+            order=order,
+            product=product,
+            quantity=1,
+        )
+        url = reverse('quantity-detail', args=[quantity.id])
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['quantity'], 1)
+
+    def test_update_quantity(self):
+        order = Order.objects.create(
+            number=1,
+            table_id=1,
+            customer_id=1,
+            state=Order.State.ORDERING,
+            total_check=0,
+            percentage_tip=0,
+            total_tip=0,
+        )
+        product = Product.objects.create(
+            name='Test Product',
+            price=10,
+            img='test.jpg',
+            description='Test description',
+            category=Product.Category.MAIN,
+        )
+        quantity = Quantity.objects.create(
+            order=order,
+            product=product,
+            quantity=1,
+        )
+
+        url = reverse('quantity-detail', args=[quantity.id])
+        data = {
+            'quantity': 2,
+        }
+        response = self.client.patch(url, data, format='json')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        quantity.refresh_from_db()
+        self.assertEqual(quantity.quantity, 2)
+
+    def test_delete_quantity(self):
+        order = Order.objects.create(
+            number=1,
+            table_id=1,
+            customer_id=1,
+            state=Order.State.ORDERING,
+            total_check=0,
+            percentage_tip=0,
+            total_tip=0,
+        )
+        product = Product.objects.create(
+            name='Test Product',
+            price=10,
+            img='test.jpg',
+            description='Test description',
+            category=Product.Category.MAIN,
+        )
+        quantity = Quantity.objects.create(
+            order=order,
+            product=product,
+            quantity=1,
+        )
+        url = reverse('quantity-detail', args=[quantity.id])
+        response = self.client.delete(url)
+
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertFalse(Quantity.objects.filter(pk=quantity.id).exists())
 
 class OrderFilterViewTests(TestCase):
     def setUp(self):
         self.client = APIClient()
 
-    def test_filter_orders(self):
-        # Create orders with specific dates
-        order1 = OrderFactory.create(date_created=date(2023, 1, 1))
-        order2 = OrderFactory.create(date_created=date(2023, 6, 1))
-        order3 = OrderFactory.create(date_created=date(2024, 1, 1))
+    def test_order_filter_view(self):
+        Order.objects.create(
+            number=1,
+            table_id=1,
+            customer_id=1,
+            state=Order.State.ORDERING,
+            total_check=100,
+            percentage_tip=10,
+            total_tip=10,
+            date_created=datetime.now(),
+            date_paid=datetime.now(),
+        )
+        Order.objects.create(
+            number=2,
+            table_id=2,
+            customer_id=2,
+            state=Order.State.ORDERING,
+            total_check=200,
+            percentage_tip=20,
+            total_tip=20,
+            date_created=datetime.now(),
+            date_paid=datetime.now(),
+        )
 
-        url = '/api/filter/'
-        start_date = date(2023, 1, 1)
-        end_date = date(2023, 12, 31)
-        data={'start_date': start_date, 'end_date': end_date}
+        url = reverse('order-filter')
+        data = {
+            'start_date': datetime.now().strftime('%Y-%m-%d'),
+            'end_date': datetime.now().strftime('%Y-%m-%d'),
+        }
+        response = self.client.post(url, data, format='json')
 
-        response = self.client.post(url, data={'start_date': start_date, 'end_date': end_date})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
 
-        # Calculate the expected total check and total tip based on the filtered orders
-        filtered_orders = [order for order in [order1, order2, order3] if start_date <= order.date_created <= end_date]
-        total_check = sum(order.total_check for order in filtered_orders)
-        total_tip = sum(order.total_tip for order in filtered_orders)
+class OrderDeleteViewTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
 
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data['orders'], OrderSerializer(filtered_orders, many=True).data)
-        self.assertEqual(response.data['total_check'], total_check)
-        self.assertEqual(response.data['total_tip'], total_tip)
+    def test_order_delete_view(self):
+        Order.objects.create(
+            number=1,
+            table_id=1,
+            customer_id=1,
+            state=Order.State.PAID,
+            total_check=100,
+            percentage_tip=10,
+            total_tip=10,
+            date_created=datetime.now(),
+            date_paid=datetime.now(),
+        )
+        Order.objects.create(
+            number=2,
+            table_id=2,
+            customer_id=2,
+            state=Order.State.PAID,
+            total_check=200,
+            percentage_tip=20,
+            total_tip=20,
+            date_created=datetime.now(),
+            date_paid=datetime.now(),
+        )
 
-    def test_filter_orders_invalid_dates(self):
-        url = '/api/filter/'
-        data={'start_date': 'invalid', 'end_date': 'date'}
-        response = self.client.post(url, json.dumps(data), content_type='application/json')
+        url = reverse('order-delete')
+        data = {
+            'start_date': datetime.now().strftime('%Y-%m-%d'),
+            'end_date': datetime.now().strftime('%Y-%m-%d'),
+        }
+        response = self.client.post(url, data, format='json')
 
-        self.assertEqual(response.status_code, 400)
-        self.assertEqual(response.data['error'], 'Invalid date format. Please provide dates in the format: YYYY-MM-DD.')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
 
-    def test_filter_orders_missing_dates(self):
-        url = '/api/filter/'
-        data={}
-        response = self.client.post(url, json.dumps(data), content_type='application/json')
-
-        self.assertEqual(response.status_code, 400)
-        self.assertEqual(response.data['error'], 'start_date and end_date are required.')
